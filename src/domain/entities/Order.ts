@@ -39,6 +39,16 @@ export class Order {
     return order;
   }
 
+  static reconstruct(
+    id: OrderId,
+    customerId: CustomerId,
+    createdAt: Date,
+    status: OrderStatus,
+    items: OrderItem[],
+  ): Order {
+    return new Order(id, customerId, createdAt, status, items);
+  }
+
   // ── Queries ───────────────────────────────────────────────────────────────
 
   get status(): OrderStatus { return this._status; }

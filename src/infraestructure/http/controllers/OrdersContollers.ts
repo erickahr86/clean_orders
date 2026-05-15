@@ -2,8 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppError } from '../../../application/errors.js';
 import { CreateOrderDto } from '../../../application/dto/CreateOrderDto.js';
 import { AddItemToOrderDto } from '../../../application/dto/AddItemToOrderDto.js';
-import type { CreateOrder } from '../../../application/use-cases/CreateOrder.js';
-import type { AddItemToOrder } from '../../../application/use-cases/AddItemToOrder.js';
+import type { CreateOrderUseCase, AddItemToOrderUseCase } from '../../../application/ports/ServerDependencies.js';
+import type { Logger } from '../../../application/ports/Logger.js';
 
 interface CreateOrderRequest {
   orderId: string;
@@ -30,8 +30,9 @@ function serializeError(error: AppError): Record<string, unknown> {
 
 export class OrdersController {
   constructor(
-    private readonly createOrderUseCase: CreateOrder,
-    private readonly addItemUseCase: AddItemToOrder,
+    private readonly createOrderUseCase: CreateOrderUseCase,
+    private readonly addItemUseCase: AddItemToOrderUseCase,
+    private readonly logger: Logger,
   ) {}
 
   async registerRoutes(fastify: FastifyInstance): Promise<void> {
@@ -43,20 +44,24 @@ export class OrdersController {
     request: FastifyRequest<{ Body: CreateOrderRequest }>,
     reply: FastifyReply,
   ): Promise<void> {
-    const { orderId, customerId } = request.body;
-    request.log.info({ orderId, customerId }, 'CreateOrder requested');
+    const logger = this.logger.child({
+      requestId: request.id,
+      operation: 'CreateOrder',
+      method: request.method,
+      url: request.url,
+    });
+    logger.info('creating order', { body: request.body });
 
-    const dto: CreateOrderDto = { orderId, customerId };
-    const result = await this.createOrderUseCase.execute(dto);
+    const { orderId, customerId } = request.body;
+    const result = await this.createOrderUseCase.execute({ orderId, customerId } as CreateOrderDto);
 
     if (result.isFailure) {
-      const statusCode = this.mapErrorToStatusCode(result.error);
-      request.log.warn({ error: result.error }, 'CreateOrder failed');
-      reply.code(statusCode).send(serializeError(result.error));
+      logger.warn('CreateOrder failed', { error: result.error });
+      reply.code(this.mapErrorToStatusCode(result.error)).send(serializeError(result.error));
       return;
     }
 
-    request.log.info({ orderId: result.value.orderId }, 'Order created');
+    logger.info('Order created', { orderId: result.value.orderId });
     reply.code(201).send(result.value);
   }
 
@@ -66,19 +71,24 @@ export class OrdersController {
   ): Promise<void> {
     const { orderId } = request.params;
     const { productId, quantity } = request.body;
-    request.log.info({ orderId, productId, quantity }, 'AddItemToOrder requested');
 
-    const dto: AddItemToOrderDto = { orderId, productId, quantity };
-    const result = await this.addItemUseCase.execute(dto);
+    const logger = this.logger.child({
+      requestId: request.id,
+      operation: 'AddItemToOrder',
+      method: request.method,
+      url: request.url,
+    });
+    logger.info('AddItemToOrder requested', { orderId, productId, quantity });
+
+    const result = await this.addItemUseCase.execute({ orderId, productId, quantity } as AddItemToOrderDto);
 
     if (result.isFailure) {
-      const statusCode = this.mapErrorToStatusCode(result.error);
-      request.log.warn({ error: result.error }, 'AddItemToOrder failed');
-      reply.code(statusCode).send(serializeError(result.error));
+      logger.warn('AddItemToOrder failed', { error: result.error });
+      reply.code(this.mapErrorToStatusCode(result.error)).send(serializeError(result.error));
       return;
     }
 
-    request.log.info({ orderId, productId }, 'Item added to order');
+    logger.info('Item added to order', { orderId, productId });
     reply.code(204).send();
   }
 
